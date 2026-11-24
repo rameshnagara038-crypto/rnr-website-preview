@@ -4,11 +4,45 @@ const toggle=document.querySelector('.manage-gallery'), panel=get('gallery-admin
 const status=get('gallery-status'), photos=get('gallery-photos'), more=get('gallery-more');
 let authorization='',cursor=null;
 toggle.onclick=()=>{panel.hidden=!panel.hidden;toggle.setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden)panel.querySelector('form:not([hidden]) input').focus()};
-function card({url,caption}){const f=document.createElement('figure'),im=new Image(),c=document.createElement('figcaption');im.loading='lazy';im.src=url;im.alt=caption||'RNR field photograph';c.textContent=caption;f.append(im,c);return f}
+function card({url, caption, key}) {
+  const figure = document.createElement('figure');
+  const image = new Image();
+  const label = document.createElement('figcaption');
+  image.loading = 'lazy';
+  image.src = url;
+  image.alt = caption || 'RNR field photograph';
+  label.textContent = caption;
+  figure.append(image, label);
+  if (key) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'gallery-delete';
+    button.textContent = 'Delete photo';
+    button.setAttribute('aria-label', 'Delete ' + image.alt);
+    button.onclick = async () => {
+      if (!authorization || !window.confirm('Permanently delete “' + image.alt + '” from the gallery?')) return;
+      button.disabled = true;
+      try {
+        const response = await fetch('/api/gallery?key=' + encodeURIComponent(key), {
+          method: 'DELETE', headers: {Authorization: authorization}
+        });
+        if (!response.ok) throw Error('Could not delete the photo. Please try again.');
+        figure.remove();
+        status.textContent = 'Photo deleted.';
+      } catch (error) {
+        status.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    };
+    figure.append(button);
+  }
+  return figure;
+}
 async function list(){more.disabled=true;try{const res=await fetch('/api/gallery'+(cursor?'?cursor='+encodeURIComponent(cursor):''));if(!res.ok)throw Error();const data=await res.json();for(const photo of data.images)photos.insertBefore(card(photo),photos.querySelector('.gallery-seed'));cursor=data.cursor;more.hidden=!cursor;get('gallery-load-status').textContent=''}catch{get('gallery-load-status').textContent='Could not load uploaded photos.';more.hidden=false;more.textContent='Retry loading photos'}finally{more.disabled=false}}
 more.onclick=list;list();
-login.onsubmit=async e=>{e.preventDefault();const btn=login.querySelector('button');btn.disabled=true;try{const value='Basic '+btoa(login.username.value+':'+login.password.value);const res=await fetch('/api/gallery/login',{method:'POST',headers:{Authorization:value}});if(!res.ok){const issue=await res.json().catch(()=>({}));throw Error(issue.error||'Gallery login service unavailable.')}authorization=value;login.reset();login.hidden=true;upload.hidden=false;toggle.textContent='Manage gallery';status.textContent='Signed in. Choose a photo to upload.'}catch(err){status.textContent=err.message}finally{btn.disabled=false}};
-get('gallery-logout').onclick=()=>{authorization='';upload.reset();upload.hidden=true;login.hidden=false;toggle.textContent='Gallery login';status.textContent='Signed out.'};
+login.onsubmit=async e=>{e.preventDefault();const btn=login.querySelector('button');btn.disabled=true;try{const value='Basic '+btoa(login.username.value+':'+login.password.value);const res=await fetch('/api/gallery/login',{method:'POST',headers:{Authorization:value}});if(!res.ok){const issue=await res.json().catch(()=>({}));throw Error(issue.error||'Gallery login service unavailable.')}authorization=value;photos.classList.add('gallery-editing');login.reset();login.hidden=true;upload.hidden=false;toggle.textContent='Manage gallery';status.textContent='Signed in. Choose a photo to upload.'}catch(err){status.textContent=err.message}finally{btn.disabled=false}};
+get('gallery-logout').onclick=()=>{authorization='';photos.classList.remove('gallery-editing');upload.reset();upload.hidden=true;login.hidden=false;toggle.textContent='Gallery login';status.textContent='Signed out.'};
 async function prepare(file){
  if(!file||!['image/jpeg','image/png','image/webp'].includes(file.type))throw Error('Select a JPEG, PNG or WebP photo.');
  if(file.size>25*1024*1024)throw Error('Select a photo smaller than 25 MB.');
